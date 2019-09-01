@@ -4,6 +4,7 @@ import warnings
 from lmfit import Model
 import pandas as pd
 from final_scripts.get_data import OUTPUT_PATH
+from final_scripts.plotters import makeCountrySubplots, makeCaterpillarPlot, makeBICPlot
 
 def logistic(t,A,mu,lamb):
     """
@@ -47,20 +48,6 @@ def curveFitter(function, y, t):
     fittedModel = mod.fit(y, t=t, verbose=False)
     return fittedModel
 
-def oldCurveFitter(function, df, t, country):
-    y = np.asarray(df[country])
-    mod = Model(function)
-    # Set parameter hints
-    # A - Restrict coverage between 0 and 100%, guess current maximum value
-    mod.set_param_hint('A',value=y.max(),min=0,max=100)
-    # Mu - Rate of change, guess max difference
-    mod.set_param_hint('mu', value=df[country].diff(1).max())
-    # Lambda - Lag time, guess 3
-    mod.set_param_hint('lamb',value=3)
-    # Fit model
-    result = mod.fit(y,t=t,verbose=False)
-    return result
-
 def storeResults(model):
     """
     Store pertinent information from ModelResult object for fitted growth curve
@@ -100,6 +87,7 @@ if __name__ == '__main__':
     countryList.sort()
 
     resultsDict = {'logistic':{}, 'gompertz':{}, 'constants':{}}
+    modelDict = {}
     for country in countryList:
         print(f'Fitting curves for {country}')
         df = artDf[artDf['Country Code'] == country]
@@ -116,11 +104,12 @@ if __name__ == '__main__':
         logisticFit = curveFitter(function=logistic, y=y, t=tInt)
         # Fit Gompertz curve
         gompertzFit = curveFitter(function=gompertz, y=y, t=tInt)
+        if country in ['BWA','GAB','RWA','KEN','UGA','ZAF']:
+            modelDict[country] = {'logistic': logisticFit, 'gompertz': gompertzFit}
         # Store results
         resultsDict['logistic'][country] = storeResults(logisticFit)
         resultsDict['gompertz'][country] = storeResults(gompertzFit)
         resultsDict['constants'][country] = storeConstants(y)
-        # TODO: Save fitted models to files for generating plots
 
     # Construct dataframe with results
     dfDict = {func: pd.DataFrame.from_dict(resultsDict[func], orient='index') for func in resultsDict.keys()}
@@ -128,8 +117,9 @@ if __name__ == '__main__':
                         left_index=True, right_index=True, suffixes=('_logistic', '_gompertz'))
     joinedDf = pd.merge(left=joinedDf, right=dfDict['constants'], how='left',
                         left_index=True, right_index=True)
-    joinedDf['deltaBIC'] = joinedDf['BIC_gompertz']-joinedDf['BIC_logistic']
-    # TODO: Add country name as column
+    joinedDf['delta_BIC'] = joinedDf['BIC_gompertz']-joinedDf['BIC_logistic']
+    joinedDf = pd.merge(left=joinedDf, right=artDf[['Country Code','Country Name']], how='left',
+                        left_index=True, right_on='Country Code')
 
     # Add rankings based on subset of metrics
     for metric in ['avgChange','mu_gompertz','mu_logistic']:
@@ -143,3 +133,22 @@ if __name__ == '__main__':
     writer = pd.ExcelWriter('/home/ben/Desktop/ART_model_results.xlsx')
     joinedDf.to_excel(writer)
     writer.save()
+
+    # Make plots
+    print('Making figures for manuscript')
+    makeCountrySubplots(artDf=artDf, countries=['BWA', 'GAB', 'RWA', 'KEN', 'UGA', 'ZAF'],
+                        model_dict=modelDict, output_path='/home/ben/Desktop/countries.png')
+
+    # Make caterpillar plots
+    makeCaterpillarPlot(df=joinedDf,
+                        metric_dict={'mu_gompertz':'$\mu$ - Gompertz', 'mu_logistic':'$\mu$ - Logistic',
+                                     'avgChange':'Avg. change'},
+                        xlabel='Rate of change (percentage points/year)', output_path='/home/ben/Desktop/mu_plot.png',
+                        sort_list=[True, False])
+    makeCaterpillarPlot(df=joinedDf,
+                        metric_dict={'lamb_gompertz':'$\lambda$ - Gompertz', 'lamb_logistic':'$\lambda$ - Logistic',
+                                     'obsDelay':'Observed'},
+                        xlabel='Delay in scale-up (years)', output_path='/home/ben/Desktop/lamb_plot.png')
+
+    # Make BIC plot
+    makeBICPlot(df=joinedDf, output_path='/home/ben/Desktop/bic_plot.png')
