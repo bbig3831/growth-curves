@@ -77,13 +77,15 @@ if __name__ == '__main__':
     # Import ART coverage data
     artDf = pd.read_csv(os.path.join(OUTPUT_PATH, 'API_SH.HIV.ARTC.ZS_DS2_EN_csv_v2_116032.csv'), header=2)
     artDf.drop(labels=['Indicator Name', 'Indicator Code', 'Unnamed: 22'], axis=1, inplace=True)
+    # Get countries with >= 30% ART coverage
+    highARTCountries = artDf[artDf['2017']>=30]['Country Code'].tolist()
     # Import population coverage data
     popDf = pd.read_csv(os.path.join(OUTPUT_PATH, 'API_SP.POP.TOTL_DS2_EN_csv_v2_116033.csv'), header=2)
     popList = popDf[popDf['2017']>=1e6]['Country Code'].tolist()
     # Import data to get countries in sub-Saharan Africa (World Bank GroupCode = SSF)
     classDf = pd.read_excel(os.path.join(OUTPUT_PATH, 'WB_Classification.xls'), sheet_name='Groups')
     ssfCountries = classDf[classDf['GroupCode']=='SSF']['CountryCode'].tolist()
-    countryList = list(set(popList) & set(ssfCountries))
+    countryList = list(set(popList) & set(ssfCountries) & set(highARTCountries))
     countryList.sort()
 
     resultsDict = {'logistic':{}, 'gompertz':{}, 'constants':{}}
