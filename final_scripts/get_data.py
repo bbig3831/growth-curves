@@ -6,7 +6,7 @@ import os
 
 WB_URL = 'http://api.worldbank.org/v2/country/all/indicator/'
 CLASS_URL = 'http://databank.worldbank.org/data/download/site-content/CLASS.xls'
-INDS = ['SH.HIV.ARTC.ZS', 'SP.POP.TOTL']
+INDS = ['SH.HIV.ARTC.ZS', 'SP.POP.TOTL', 'SH.DYN.AIDS.ZS']
 OUTPUT_PATH = '/home/ben/Documents/coding_projects/growth_curves/source_data'
 def getWBData(url,output_path):
     """Download data via the World Bank API, unzip the file, and extract to output_path"""
