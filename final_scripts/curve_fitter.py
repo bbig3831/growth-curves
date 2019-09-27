@@ -71,6 +71,21 @@ def storeConstants(y):
     }
     return constants
 
+def saveToExcel(df, file_path):
+    """Save result set and Tables 2/3 to Excel"""
+    writer = pd.ExcelWriter(file_path)
+    df.to_excel(writer, sheet_name='Results')
+    # Write Table 2
+    table2 = df[['Country Name','avgChange','rank_avgChange','mu_gompertz','rank_mu_gompertz',
+                 'mu_logistic','rank_mu_logistic']].sort_values(by=['Country Name'])
+    table2.to_excel(writer, sheet_name='Table 2', index=False)
+    # Write Table 3
+    table3 = df[['Country Name','obsDelay','rank_obsDelay','lamb_gompertz','rank_lamb_gompertz',
+                 'lamb_logistic','rank_lamb_logistic']].sort_values(by=['Country Name'])
+    table3.to_excel(writer, sheet_name='Table 3', index=False)
+    writer.save()
+
+
 if __name__ == '__main__':
     # Turn off warnings
     warnings.filterwarnings('ignore')
@@ -91,13 +106,17 @@ if __name__ == '__main__':
     ssfCountries = classDf[classDf['GroupCode']=='SSF']['CountryCode'].tolist()
 
     # Import HIV data to get countries with max prevalence >= 5%
-    hivDf = pd.read_excel(os.path.join(OUTPUT_PATH, 'API_SH.DYN.AIDS.ZS_DS2_EN_csv_v2_150659.csv'), header=2)
+    hivDf = pd.read_csv(os.path.join(OUTPUT_PATH, 'API_SH.DYN.AIDS.ZS_DS2_EN_csv_v2_150659.csv'), header=2)
     hivDf['max_HIV_prevalence'] = hivDf[[col for col in hivDf if col.startswith('20')]].max(axis=1)
     highHIVCountries = hivDf[hivDf['max_HIV_prevalence']>=5]['Country Code'].tolist()
 
     # Set list of countries based on restrictions
-    countryList = list(set(popList) & set(ssfCountries) & set(highARTCountries) & set(highHIVCountries))
+    countryList = list(set(popList) & set(ssfCountries))
     countryList.sort()
+
+    # Define subgroup based on HIV prevalence/ART coverage restrictions
+    subgroupList = list(set(popList) & set(ssfCountries) & set(highARTCountries) & set(highHIVCountries))
+    subgroupList.sort()
 
     resultsDict = {'logistic':{}, 'gompertz':{}, 'constants':{}}
     modelDict = {}
@@ -141,11 +160,13 @@ if __name__ == '__main__':
     for metric in ['obsDelay', 'lamb_gompertz', 'lamb_logistic']:
         joinedDf['rank_'+metric] = joinedDf[metric].rank(ascending=True, method='min')
 
+    # Create subgroup dataframe
+    subgroupDf = joinedDf[joinedDf['Country Code'].isin(subgroupList)]
+
     # Write output to Excel
     print('Saving results to Excel')
-    writer = pd.ExcelWriter('/home/ben/Desktop/ART_model_results.xlsx')
-    joinedDf.to_excel(writer)
-    writer.save()
+    saveToExcel(joinedDf, '/home/ben/Desktop/ART_model_results.xlsx')
+    saveToExcel(subgroupDf, '/home/ben/Desktop/ART_model_results_subgroup.xlsx')
 
     # Make plots
     print('Making figures for manuscript')
@@ -153,15 +174,18 @@ if __name__ == '__main__':
                         model_dict=modelDict, output_path='/home/ben/Desktop/countries.png')
 
     # Make caterpillar plots
-    makeCaterpillarPlot(df=joinedDf,
-                        metric_dict={'mu_gompertz':'$\mu$ - Gompertz', 'mu_logistic':'$\mu$ - Logistic',
-                                     'avgChange':'Avg. change'},
-                        xlabel='Rate of change (percentage points/year)', output_path='/home/ben/Desktop/mu_plot.png',
-                        sort_list=[True, False])
-    makeCaterpillarPlot(df=joinedDf,
-                        metric_dict={'lamb_gompertz':'$\lambda$ - Gompertz', 'lamb_logistic':'$\lambda$ - Logistic',
-                                     'obsDelay':'Observed'},
-                        xlabel='Delay in scale-up (years)', output_path='/home/ben/Desktop/lamb_plot.png')
+    plotDict = {'all':joinedDf, 'subgroup':subgroupDf}
+    for label, df in plotDict.items():
+        makeCaterpillarPlot(df=df,
+                            metric_dict={'mu_gompertz':'$\mu$ - Gompertz', 'mu_logistic':'$\mu$ - Logistic',
+                                         'avgChange':'Avg. change'},
+                            xlabel='Rate of change (percentage points/year)',
+                            output_path=f'/home/ben/Desktop/mu_plot_{label}.png',
+                            sort_list=[True, False])
+        makeCaterpillarPlot(df=df,
+                            metric_dict={'lamb_gompertz':'$\lambda$ - Gompertz', 'lamb_logistic':'$\lambda$ - Logistic',
+                                         'obsDelay':'Observed'},
+                            xlabel='Delay in scale-up (years)', output_path=f'/home/ben/Desktop/lamb_plot_{label}.png')
 
-    # Make BIC plot
-    makeBICPlot(df=joinedDf, output_path='/home/ben/Desktop/bic_plot.png')
+        # Make BIC plot
+        makeBICPlot(df=df, output_path=f'/home/ben/Desktop/bic_plot_{label}.png')
